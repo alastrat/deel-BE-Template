@@ -11,16 +11,6 @@ const { Job, Contract, Profile } = sequelize.models;
 
 
 /**
- * @returns all non terminated contracts
- */
-app.get('/contracts', getProfile, async (req, res) => {
-    const role = req.profile.type === 'client' ? 'ClientId' : 'ContractorId'
-    const contracts = await Contract.findAll({ where: { [role]: req.profile.id, status: { [Op.not]: 'terminated' } } });
-    if (contracts.length == 0) return res.status(404).end()
-    res.json(contracts)
-})
-
-/**
  * @returns contract by id
  */
 app.get('/contracts/:id', getProfile, async (req, res) => {
@@ -28,6 +18,16 @@ app.get('/contracts/:id', getProfile, async (req, res) => {
     const contract = await Contract.findOne({ where: { ClientId: req.profile.id, id } });
     if (!contract) return res.status(404).end()
     res.json(contract)
+})
+
+/**
+ * @returns all non terminated contracts
+ */
+app.get('/contracts', getProfile, async (req, res) => {
+    const role = req.profile.type === 'client' ? 'ClientId' : 'ContractorId'
+    const contracts = await Contract.findAll({ where: { [role]: req.profile.id, status: { [Op.not]: 'terminated' } } });
+    if (contracts.length == 0) return res.status(404).end()
+    res.json(contracts)
 })
 
 /**
@@ -49,16 +49,18 @@ app.get('/jobs/unpaid', getProfile, async (req, res) => {
  */
 app.post('/jobs/:job_id/pay', getProfile, async (req, res) => {
     if (req.profile.type !== 'client') return res.status(403).send('Not allowed.');
-    const { job_id } = req.params // assuming that job_id ~ contractId 
+    const { job_id } = req.params
 
     const getContract = async () => await Contract.findOne({
         include: [
-            { model: Job, where: { id: job_id } }, { model: Profile, as: 'Client' }, { model: Profile, as: 'Contractor' }
-        ]
+            { model: Job, where: { id: job_id, paid: null } }, { model: Profile, as: 'Client' }, { model: Profile, as: 'Contractor' }
+        ],
+        where: { ClientId: req.profile.id }
     });
 
     const contract = await getContract();
-    if (!contract) return res.status(404).send('Contract not found.');
+    if (!contract) return res.status(404).send('Job not found or already paid.');
+
     if (contract.Jobs[0].price > req.profile.balance) return res.status(404).send('Unsufficient funds.')
 
     await Promise.all([
